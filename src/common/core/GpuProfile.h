@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace sidecar {
 
@@ -14,6 +15,9 @@ struct GpuInfo {
   LUID luid{};
   uint32_t vendorId = 0;
   uint32_t deviceId = 0;
+  // Position in DXGI's high-performance enumeration order. Kept so the log and
+  // the manager can say which of several NVIDIA cards was the one taken.
+  uint32_t adapterIndex = 0;
 };
 
 // Pure. Device-id ranges are published per architecture; anything outside a
@@ -72,7 +76,26 @@ RenderSize InternalRenderSize(uint32_t captureWidth, uint32_t captureHeight,
 
 const char* ToString(GpuArch arch);
 
-// Enumerates adapters and returns the first hardware NVIDIA adapter.
+// Every hardware NVIDIA adapter, in DXGI high-performance order. Software
+// adapters and other vendors are left out.
+std::vector<GpuInfo> EnumerateNvidiaGpus();
+
+// Pure. Which of the adapters EnumerateNvidiaGpus returned to use: the first
+// Ada or Blackwell part if there is one, otherwise the first adapter.
+//
+// The preference matters on machines with more than one NVIDIA card. DXGI's
+// order there follows the slot and the display wiring, not the generation, so
+// an RTX 30 card can come before an RTX 40 one -- and taking the first adapter
+// then refused to run on a machine that has a supported card in it. With a
+// single card the result is that card, exactly as before.
+std::optional<GpuInfo> SelectPreferredGpu(const std::vector<GpuInfo>& adapters);
+
+// EnumerateNvidiaGpus, then SelectPreferredGpu. Empty when there is no NVIDIA
+// adapter at all.
 std::optional<GpuInfo> DetectPrimaryGpu();
+
+// One line for logs and the manager: name, device id, architecture and DXGI
+// index, so a report from a multi-GPU machine says which card was used.
+std::string DescribeGpu(const GpuInfo& gpu);
 
 }  // namespace sidecar

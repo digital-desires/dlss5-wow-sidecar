@@ -116,14 +116,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   GlobalLog().OpenFile(ExecutableDirectory() / "sidecar.log");
   GlobalLog().Info("sidecar starting");
 
-  auto gpu = DetectPrimaryGpu();
+  // Enumerated once and listed, so a log from a machine with two NVIDIA cards
+  // shows every candidate as well as the one that was taken.
+  const auto adapters = EnumerateNvidiaGpus();
+  for (const auto& candidate : adapters) {
+    GlobalLog().Info("NVIDIA adapter found: " + DescribeGpu(candidate));
+  }
+  auto gpu = SelectPreferredGpu(adapters);
   if (!gpu) {
     GlobalLog().Error("no NVIDIA adapter found");
     MessageBoxW(nullptr, WideFromUtf8(Tr("No NVIDIA adapter found.")).c_str(),
                 L"DLSS 5 Sidecar", MB_ICONERROR);
     return 1;
   }
-  GlobalLog().Info(std::string("adapter: ") + ToString(gpu->arch));
+  GlobalLog().Info("adapter: " + DescribeGpu(*gpu));
 
   if (gpu->arch != GpuArch::Ada && gpu->arch != GpuArch::Blackwell) {
     GlobalLog().Error(std::string(ToString(gpu->arch)) +

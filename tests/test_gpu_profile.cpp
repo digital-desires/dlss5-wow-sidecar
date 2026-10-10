@@ -141,3 +141,50 @@ TEST_CASE("default internal height follows the spec GPU matrix", "[unit]") {
   REQUIRE(DefaultInternalHeight(GpuArch::Ampere) == 0);
   REQUIRE(DefaultInternalHeight(GpuArch::Unsupported) == 0);
 }
+
+namespace {
+GpuInfo Adapter(uint32_t deviceId, uint32_t index) {
+  GpuInfo gpu;
+  gpu.vendorId = kNvidia;
+  gpu.deviceId = deviceId;
+  gpu.arch = ArchitectureFromDeviceId(kNvidia, deviceId);
+  gpu.adapterIndex = index;
+  return gpu;
+}
+}  // namespace
+
+// The bug case: an RTX 3060 enumerated ahead of an RTX 4060 Ti. Taking the
+// first adapter refused to run on a machine with a supported card in it.
+TEST_CASE("a supported card is preferred over an earlier older one", "[unit]") {
+  const auto chosen = SelectPreferredGpu({Adapter(0x2504, 0), Adapter(0x2805, 1)});
+  REQUIRE(chosen.has_value());
+  CHECK(chosen->deviceId == 0x2805);
+  CHECK(chosen->adapterIndex == 1);
+  CHECK(chosen->arch == GpuArch::Ada);
+
+  const auto blackwell = SelectPreferredGpu({Adapter(0x1E04, 0), Adapter(0x2C02, 1)});
+  REQUIRE(blackwell.has_value());
+  CHECK(blackwell->arch == GpuArch::Blackwell);
+}
+
+// Ada and Blackwell are not ranked against each other: DXGI's order decides.
+TEST_CASE("among supported cards the first in DXGI order wins", "[unit]") {
+  const auto chosen =
+      SelectPreferredGpu({Adapter(0x2204, 0), Adapter(0x2786, 1), Adapter(0x2B85, 2)});
+  REQUIRE(chosen.has_value());
+  CHECK(chosen->adapterIndex == 1);
+}
+
+// Single-GPU and no-supported-GPU machines behave exactly as before: the first
+// NVIDIA adapter, so the refusal still names the card the operator has.
+TEST_CASE("without a supported card the first adapter is still chosen", "[unit]") {
+  const auto single = SelectPreferredGpu({Adapter(0x2504, 0)});
+  REQUIRE(single.has_value());
+  CHECK(single->arch == GpuArch::Ampere);
+
+  const auto older = SelectPreferredGpu({Adapter(0x1E04, 0), Adapter(0x2204, 1)});
+  REQUIRE(older.has_value());
+  CHECK(older->adapterIndex == 0);
+
+  CHECK_FALSE(SelectPreferredGpu({}).has_value());
+}

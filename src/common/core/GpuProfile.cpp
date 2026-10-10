@@ -3,6 +3,10 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
+#include <cstdio>
+
+#include "core/Utf8.h"
+
 using Microsoft::WRL::ComPtr;
 
 namespace sidecar {
@@ -92,9 +96,10 @@ const char* ToString(GpuArch arch) {
   }
 }
 
-std::optional<GpuInfo> DetectPrimaryGpu() {
+std::vector<GpuInfo> EnumerateNvidiaGpus() {
+  std::vector<GpuInfo> found;
   ComPtr<IDXGIFactory6> factory;
-  if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return std::nullopt;
+  if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return found;
 
   ComPtr<IDXGIAdapter1> adapter;
   for (UINT i = 0;
@@ -114,9 +119,29 @@ std::optional<GpuInfo> DetectPrimaryGpu() {
     info.arch = ArchitectureFromDeviceId(desc.VendorId, desc.DeviceId);
     info.name = desc.Description;
     info.luid = desc.AdapterLuid;
-    return info;
+    info.adapterIndex = i;
+    found.push_back(std::move(info));
   }
-  return std::nullopt;
+  return found;
+}
+
+std::optional<GpuInfo> SelectPreferredGpu(const std::vector<GpuInfo>& adapters) {
+  for (const auto& gpu : adapters) {
+    if (gpu.arch == GpuArch::Ada || gpu.arch == GpuArch::Blackwell) return gpu;
+  }
+  if (adapters.empty()) return std::nullopt;
+  return adapters.front();
+}
+
+std::optional<GpuInfo> DetectPrimaryGpu() {
+  return SelectPreferredGpu(EnumerateNvidiaGpus());
+}
+
+std::string DescribeGpu(const GpuInfo& gpu) {
+  char ids[64];
+  std::snprintf(ids, sizeof(ids), " (device 0x%04X, DXGI adapter %u, ",
+                gpu.deviceId, gpu.adapterIndex);
+  return Utf8FromWide(gpu.name) + ids + ToString(gpu.arch) + ")";
 }
 
 std::optional<VideoMemory> QueryVideoMemory(LUID adapter) {

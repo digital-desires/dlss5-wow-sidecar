@@ -88,11 +88,9 @@ ProbeResult ProbeGpu() {
     return r;
   }
 
-  // Adapter descriptions are ASCII in practice; narrow explicitly so the
-  // conversion is deliberate rather than a warning.
-  for (const wchar_t c : gpu->name) r.detail.push_back(c < 128 ? static_cast<char>(c) : '?');
-  r.detail += " - ";
-  r.detail += ToString(gpu->arch);
+  // Name, device id, architecture and DXGI index of the adapter actually
+  // chosen, so a machine with two NVIDIA cards shows which one it was.
+  r.detail = DescribeGpu(*gpu);
 
   if (gpu->arch == GpuArch::Ada || gpu->arch == GpuArch::Blackwell) {
     r.state = ProbeState::Ok;
